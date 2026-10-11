@@ -145,6 +145,4 @@ Edit the constants at the top of `app.py`:
 
 Python · YOLOv8 (Ultralytics) · OpenCV · Flask · SQLite · ESP32
 
-## License
 
-Add a license of your choice (for example MIT) in a `LICENSE` file.
