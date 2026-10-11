@@ -1,0 +1,223 @@
+{% extends "layout.html" %}
+
+{% block title %}Live Camera — Smart Chicken Coop AI{% endblock %}
+{% block page_title %}<i class="fa-solid fa-video me-2"></i>Live Camera{% endblock %}
+
+{% block content %}
+
+<!-- Mode banner -->
+<div class="mode-banner {{ 'banner-esp32' if use_esp32 else 'banner-sim' }}">
+  <i class="fa-solid {{ 'fa-wifi' if use_esp32 else 'fa-laptop' }}"></i>
+  {% if use_esp32 %}
+    ESP32-CAM connected — {{ esp32_url }}
+  {% else %}
+    Simulation mode — laptop webcam &nbsp;·&nbsp;
+    <span>Set <code>USE_ESP32 = True</code> in app.py when your ESP32-CAM arrives</span>
+  {% endif %}
+</div>
+
+<div class="live-grid">
+
+  <!-- Stream panel -->
+  <section class="panel live-stream-panel">
+    <div class="panel-header">
+      <i class="fa-solid fa-circle live-dot"></i>
+      <span>Live Feed</span>
+      <span class="live-tag">LIVE</span>
+    </div>
+
+    <div class="stream-wrap" id="streamWrap">
+      <img src="{{ url_for('video_feed') }}"
+           id="streamImg"
+           alt="Live camera feed"
+           class="stream-img"/>
+      <!-- Capture flash overlay -->
+      <div class="capture-flash" id="captureFlash"></div>
+      <!-- Scanning line animation -->
+      <div class="scan-line" id="scanLine" style="display:none;"></div>
+    </div>
+
+    <button class="btn-capture" id="captureBtn" onclick="captureFrame()">
+      <i class="fa-solid fa-camera"></i>
+      <span>Capture &amp; Detect</span>
+      <div class="btn-shine"></div>
+    </button>
+  </section>
+
+  <!-- Result panel -->
+  <section class="panel live-result-panel">
+    <div class="panel-header">
+      <i class="fa-solid fa-microscope"></i>
+      <span>Detection Result</span>
+    </div>
+
+    <!-- Waiting state -->
+    <div class="live-empty" id="liveEmpty">
+      <i class="fa-solid fa-egg fa-3x"></i>
+      <p>Press <strong>Capture &amp; Detect</strong> to analyze a frame</p>
+    </div>
+
+    <!-- Result state (hidden until first capture) -->
+    <div class="live-result" id="liveResult" style="display:none;">
+
+      <div class="result-image-wrap">
+        <img id="resultImg" src="" alt="Detection result" class="result-img"/>
+      </div>
+
+      <div class="result-metrics">
+        <div class="metric">
+          <span class="metric-label">Confidence</span>
+          <div class="confidence-bar">
+            <div class="confidence-fill" id="confBar" style="width:0%"></div>
+          </div>
+          <span class="metric-value" id="confValue">0%</span>
+        </div>
+      </div>
+
+      <div class="verdict" id="verdict">
+        <!-- filled by JS -->
+      </div>
+
+      <div class="capture-meta" id="captureMeta"></div>
+    </div>
+
+    <!-- Error state -->
+    <div class="live-error" id="liveError" style="display:none;">
+      <i class="fa-solid fa-triangle-exclamation fa-2x"></i>
+      <p id="errorMsg">Something went wrong.</p>
+    </div>
+
+  </section>
+
+</div>
+
+<!-- Recent captures row -->
+<section class="panel recent-panel">
+  <div class="panel-header">
+    <i class="fa-solid fa-clock-rotate-left"></i>
+    <span>Recent Captures</span>
+    <a href="{{ url_for('history') }}" class="panel-link">View all →</a>
+  </div>
+  <div class="recent-grid" id="recentGrid">
+    <div class="recent-empty">No captures yet — press the button above</div>
+  </div>
+</section>
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+const recentCaptures = [];
+
+async function captureFrame() {
+  const btn      = document.getElementById('captureBtn');
+  const flash    = document.getElementById('captureFlash');
+  const scanLine = document.getElementById('scanLine');
+  const empty    = document.getElementById('liveEmpty');
+  const result   = document.getElementById('liveResult');
+  const errDiv   = document.getElementById('liveError');
+
+  // Disable button + show scanning
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Analyzing…</span>';
+  scanLine.style.display = 'block';
+  errDiv.style.display   = 'none';
+
+  // Flash effect
+  flash.style.opacity = '0.6';
+  setTimeout(() => { flash.style.opacity = '0'; }, 150);
+
+  try {
+    const res  = await fetch('/capture', { method: 'POST' });
+    const data = await res.json();
+
+    if (data.error) {
+      showError(data.error);
+      return;
+    }
+
+    // Show result panel
+    empty.style.display  = 'none';
+    result.style.display = 'block';
+
+    // Annotated image
+    document.getElementById('resultImg').src = data.result_img + '?t=' + Date.now();
+
+    // Confidence bar animate
+    const bar = document.getElementById('confBar');
+    bar.style.width = '0%';
+    setTimeout(() => { bar.style.width = data.confidence + '%'; }, 100);
+    document.getElementById('confValue').textContent = data.confidence + '%';
+
+    // Verdict
+    const verdictEl = document.getElementById('verdict');
+    if (data.rejected_as) {
+      verdictEl.className = 'verdict verdict--close';
+      verdictEl.innerHTML = `
+        <i class="fa-solid fa-ban"></i>
+        <div><strong>${data.rejected_as.toUpperCase()} Detected</strong>
+        <span>→ CLOSE DOOR</span></div>`;
+    } else if (data.detected) {
+      verdictEl.className = 'verdict verdict--open';
+      verdictEl.innerHTML = `
+        <i class="fa-solid fa-circle-check"></i>
+        <div><strong>Chicken Detected</strong>
+        <span>→ OPEN DOOR</span></div>`;
+    } else {
+      verdictEl.className = 'verdict verdict--close';
+      verdictEl.innerHTML = `
+        <i class="fa-solid fa-circle-xmark"></i>
+        <div><strong>No Chicken Detected</strong>
+        <span>→ CLOSE DOOR</span></div>`;
+    }
+
+    // Meta
+    document.getElementById('captureMeta').innerHTML =
+      `<i class="fa-regular fa-clock"></i> ${data.time}`;
+
+    // Add to recent
+    addRecent(data);
+
+  } catch (err) {
+    showError('Network error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-camera"></i><span>Capture & Detect</span><div class="btn-shine"></div>';
+    scanLine.style.display = 'none';
+  }
+}
+
+function showError(msg) {
+  document.getElementById('liveError').style.display = 'flex';
+  document.getElementById('errorMsg').textContent    = msg;
+  document.getElementById('liveResult').style.display = 'none';
+  document.getElementById('liveEmpty').style.display  = 'none';
+}
+
+function addRecent(data) {
+  recentCaptures.unshift(data);
+  if (recentCaptures.length > 6) recentCaptures.pop();
+
+  const grid = document.getElementById('recentGrid');
+  grid.innerHTML = recentCaptures.map(d => `
+    <div class="recent-card ${d.detected ? 'rc-open' : 'rc-close'}">
+      <img src="${d.result_img}?t=${Date.now()}" alt="capture"
+           onerror="this.src='/static/placeholder.svg'"/>
+      <div class="rc-badge ${d.detected ? 'badge-open' : 'badge-close'}">
+        ${d.door_action}
+      </div>
+      <div class="rc-conf">${d.confidence}%</div>
+    </div>
+  `).join('');
+}
+
+// Keyboard shortcut — spacebar to capture
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && !document.getElementById('captureBtn').disabled) {
+    e.preventDefault();
+    captureFrame();
+  }
+});
+</script>
+{% endblock %}

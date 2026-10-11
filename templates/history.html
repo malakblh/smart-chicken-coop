@@ -1,0 +1,145 @@
+{% extends "layout.html" %}
+
+{% block title %}History — Smart Chicken Coop AI{% endblock %}
+{% block page_title %}<i class="fa-solid fa-clock-rotate-left me-2"></i>Detection History{% endblock %}
+
+{% block content %}
+
+<div class="history-header">
+  <div class="history-count">
+    <i class="fa-solid fa-database"></i>
+    {{ detections | length }} record{{ 's' if detections | length != 1 else '' }}
+  </div>
+  <div style="display:flex; gap:10px;">
+    <form method="POST" action="{{ url_for('cleanup') }}"
+          onsubmit="return confirm('Remove all records with missing images?');">
+      <button type="submit" class="btn-back" style="background:#ef4444; border-color:#ef4444;">
+        <i class="fa-solid fa-broom"></i> Cleanup
+      </button>
+    </form>
+    <a href="{{ url_for('dashboard') }}" class="btn-back">
+      <i class="fa-solid fa-plus"></i> New Detection
+    </a>
+  </div>
+</div>
+
+{% if detections %}
+<div class="history-grid">
+  {% for d in detections %}
+  <article class="history-card {{ 'card-open' if d.door_status == 'OPEN' else 'card-close' }}">
+
+    <!-- Image -->
+    <div class="hcard-img-wrap">
+      {% set result_img = 'results/result_' ~ d.image_name %}
+      {% set upload_img = 'uploads/' ~ d.image_name %}
+      <img src="{{ url_for('static', filename=result_img) }}"
+           alt="{{ d.image_name }}"
+           class="hcard-img"
+           onerror="
+             if(this.dataset.fallback === '1') {
+               this.dataset.fallback = '2';
+               this.src = '{{ url_for('static', filename='placeholder.svg') }}';
+             } else if(!this.dataset.fallback) {
+               this.dataset.fallback = '1';
+               this.src = '{{ url_for('static', filename=upload_img) }}';
+             }
+           "/>
+      <div class="hcard-overlay">
+        <a href="{{ url_for('static', filename=result_img) }}" target="_blank" class="hcard-zoom">
+          <i class="fa-solid fa-magnifying-glass-plus"></i>
+        </a>
+      </div>
+      <span class="hcard-badge {{ 'badge-open' if d.door_status == 'OPEN' else 'badge-close' }}">
+        {{ d.door_status }}
+      </span>
+      <!-- Missing image warning -->
+      <div class="hcard-missing" id="missing-{{ d.id }}" style="display:none;">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span>Image deleted</span>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div class="hcard-body">
+      <div class="hcard-meta">
+        <i class="fa-regular fa-calendar"></i>
+        {{ d.detection_time }}
+      </div>
+
+      <div class="hcard-status">
+        {% if d.detected %}
+          <span class="status-chip chip-detected">
+            <i class="fa-solid fa-circle-check"></i> Chicken
+          </span>
+        {% else %}
+          <span class="status-chip chip-none">
+            <i class="fa-solid fa-circle-xmark"></i> None
+          </span>
+        {% endif %}
+      </div>
+
+      <div class="hcard-confidence">
+        <span class="conf-label">Confidence</span>
+        <div class="conf-bar-wrap">
+          <div class="conf-bar">
+            <div class="conf-fill {{ 'fill-open' if d.door_status == 'OPEN' else 'fill-close' }}"
+                 style="width: {{ (d.confidence * 100) | round(1) }}%"></div>
+          </div>
+          <span class="conf-pct">{{ (d.confidence * 100) | round(1) }}%</span>
+        </div>
+      </div>
+
+      <div class="hcard-footer">
+        <span class="hcard-id">#{{ d.id }}</span>
+        <form method="POST" action="{{ url_for('delete_detection', detection_id=d.id) }}"
+              onsubmit="return confirm('Delete this detection?');">
+          <button type="submit" class="btn-delete" title="Delete">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
+        </form>
+      </div>
+    </div>
+
+  </article>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="empty-history">
+  <i class="fa-solid fa-egg fa-4x"></i>
+  <h3>No detections yet</h3>
+  <p>Upload an image on the dashboard to start tracking.</p>
+  <a href="{{ url_for('dashboard') }}" class="btn-analyze">
+    <i class="fa-solid fa-upload"></i> Go to Dashboard
+  </a>
+</div>
+{% endif %}
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // Animate confidence bars
+  document.querySelectorAll('.conf-fill').forEach(bar => {
+    const target = bar.style.width;
+    bar.style.width = '0';
+    setTimeout(() => { bar.style.width = target; }, 150 + Math.random() * 300);
+  });
+
+  // Show "Image deleted" overlay when placeholder is loaded
+  document.querySelectorAll('.hcard-img').forEach(img => {
+    img.addEventListener('load', () => {
+      if (img.src.includes('placeholder.svg')) {
+        const card = img.closest('article');
+        if (card) {
+          const warn = card.querySelector('.hcard-missing');
+          if (warn) warn.style.display = 'flex';
+        }
+      }
+    });
+  });
+});
+</script>
+{% endblock %}

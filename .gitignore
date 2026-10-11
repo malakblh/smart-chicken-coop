@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Data & models
+*.db
+*.pt
+!best.pt
+dataset/
+runs/
+test_images/
+uploads/
+
+# OS/editor
+.DS_Store
+.vscode/

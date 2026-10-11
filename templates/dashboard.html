@@ -1,0 +1,494 @@
+{% extends "layout.html" %}
+{% block title %}Dashboard — Smart Chicken Coop AI{% endblock %}
+{% block page_title %}<i class="fa-solid fa-chart-line me-2"></i>Dashboard{% endblock %}
+
+{% block content %}
+
+<!-- ─── STAT CARDS ──────────────────────────── -->
+ <div class="stat-card" data-color="amber">
+  <div class="stat-icon">
+    <i class="fa-solid {{ 'fa-sun' if stats.is_daytime else 'fa-moon' }}" id="ldrIcon"></i>
+  </div>
+  <div class="stat-body">
+    <div class="stat-value stat-value--sm" id="ldrStatus">
+      {{ 'DAY' if stats.is_daytime else 'NIGHT' }}
+    </div>
+    <div class="stat-label">
+  ☀️ <span id="sunriseValue">{{ stats.sunrise }}</span>
+  —
+  🌙 <span id="sunsetValue">{{ stats.sunset }}</span>
+</div>
+  </div>
+  <div class="stat-glow"></div>
+</div>
+<div class="stats-grid">
+  <div class="stat-card" data-color="blue">
+    <div class="stat-icon"><i class="fa-solid fa-layer-group"></i></div>
+    <div class="stat-body">
+      <div class="stat-value" id="statTotal">{{ stats.total }}</div>
+      <div class="stat-label">Total Detections</div>
+    </div>
+    <div class="stat-glow"></div>
+  </div>
+
+  <div class="stat-card" data-color="green">
+    <div class="stat-icon"><i class="fa-solid fa-drumstick-bite"></i></div>
+    <div class="stat-body">
+      <div class="stat-value" id="statChickens">{{ stats.chickens }}</div>
+      <div class="stat-label">Chickens Detected</div>
+    </div>
+    <div class="stat-glow"></div>
+  </div>
+
+  <div class="stat-card" data-color="amber">
+    <div class="stat-icon"><i class="fa-solid {{ 'fa-sun' if stats.is_daytime else 'fa-moon' }}" id="ldrIcon"></i></div>
+    <div class="stat-body">
+      <div class="stat-value stat-value--sm" id="ldrStatus">{{ 'DAY' if stats.is_daytime else 'NIGHT' }}</div>
+      <div class="stat-label">Automatic Day/Night</div>
+    </div>
+    <div class="stat-glow"></div>
+  </div>
+
+  <div class="stat-card" id="doorCard"
+       data-color="{{ 'green' if stats.door_status == 'OPEN' else 'red' }}">
+    <div class="stat-icon">
+      <i class="fa-solid {{ 'fa-door-open' if stats.door_status == 'OPEN' else 'fa-door-closed' }}" id="doorIcon"></i>
+    </div>
+    <div class="stat-body">
+      <div class="stat-value">
+        <span class="door-badge door-badge--{{ stats.door_status | lower }}" id="doorBadge">
+          {{ stats.door_status }}
+        </span>
+      </div>
+      <div class="stat-label">
+        Door Status
+        {% if stats.manual_override %}
+          <span class="override-tag">MANUAL</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="stat-glow"></div>
+  </div>
+</div>
+
+<!-- ─── CHICKEN COUNTER ─────────────────────── -->
+<div class="chicken-counter-bar">
+  <div class="cc-left">
+    <i class="fa-solid fa-egg"></i>
+    <span>Chickens inside</span>
+    <strong id="ccCount">{{ stats.chicken_count }}</strong>
+    <span>/ {{ stats.total_chickens }}</span>
+    {% if stats.all_inside %}
+      <span class="cc-badge cc-all">All inside ✓</span>
+    {% else %}
+      <span class="cc-badge cc-missing">{{ stats.total_chickens - stats.chicken_count }} missing</span>
+    {% endif %}
+  </div>
+  <div class="cc-bar-wrap">
+    <div class="cc-bar">
+      <div class="cc-fill" id="ccFill"
+           style="width: {{ [(stats.chicken_count / stats.total_chickens * 100), 100] | min | round }}%">
+      </div>
+    </div>
+    <span class="cc-pct" id="ccPct">
+      {{ [(stats.chicken_count / stats.total_chickens * 100), 100] | min | round }}%
+    </span>
+  </div>
+</div>
+
+<!-- ─── AUTO BAR ─────────────────────────────── -->
+<div class="auto-bar">
+  <div class="auto-status">
+    <span class="status-dot {% if stats.auto_running %}pulse{% endif %}"
+          style="background: {{ '#22c55e' if stats.auto_running else '#555e72' }}"></span>
+    {% if stats.auto_running %}
+      <span>Auto detection <strong>ON</strong> — every {{ stats.interval }}s</span>
+    {% else %}
+      <span>Auto detection <strong>OFF</strong></span>
+    {% endif %}
+  </div>
+  <div class="auto-controls">
+    {% if stats.auto_running %}
+      <form method="POST" action="{{ url_for('auto_stop') }}">
+        <button type="submit" class="btn-auto btn-stop">
+          <i class="fa-solid fa-stop"></i> Stop
+        </button>
+      </form>
+    {% else %}
+      <form method="POST" action="{{ url_for('auto_start') }}">
+        <button type="submit" class="btn-auto btn-start">
+          <i class="fa-solid fa-play"></i> Start
+        </button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ─── MAIN ROW ─────────────────────────────── -->
+<div class="panel-row">
+
+  <!-- Latest capture + Manual control -->
+  <section class="panel">
+    <div class="panel-header">
+      <i class="fa-solid fa-camera"></i>
+      <span>Latest Auto Capture</span>
+      <span class="auto-timestamp" id="autoTime">{{ stats.last_time }}</span>
+    </div>
+
+    <!-- Latest image -->
+    <div class="result-image-wrap" style="max-height:190px; margin-bottom:12px;">
+      <img id="autoImg" src="" alt="latest" class="result-img" style="display:none;"/>
+      <div id="noCapture" class="empty-state" style="padding:28px 0;">
+        <i class="fa-solid fa-egg fa-2x"></i>
+        <p>Waiting for first capture...</p>
+      </div>
+    </div>
+
+    <!-- Confidence -->
+    <div class="result-metrics" style="margin-bottom:12px;">
+      <div class="metric">
+        <span class="metric-label">Confidence</span>
+        <div class="confidence-bar">
+          <div class="confidence-fill" id="autoConfBar" style="width:0%"></div>
+        </div>
+        <span class="metric-value" id="autoConfVal">0%</span>
+      </div>
+    </div>
+
+    <!-- Verdict -->
+    <div class="verdict verdict--close" id="autoVerdict">
+      <i class="fa-solid fa-circle-xmark"></i>
+      <div><strong>Waiting...</strong><span>No capture yet</span></div>
+    </div>
+
+    <!-- ─── MANUAL DOOR CONTROL ─────────────── -->
+    <div class="manual-control">
+      <div class="mc-header">
+        <i class="fa-solid fa-sliders"></i>
+        <span>Manual Door Control</span>
+        {% if stats.manual_override %}
+          <span class="override-tag override-tag--active">OVERRIDE ON</span>
+        {% endif %}
+      </div>
+
+      <div class="mc-buttons">
+        <form method="POST" action="{{ url_for('door_open') }}" style="flex:1;">
+          <button type="submit" class="btn-door btn-door-open"
+                  {% if stats.door_status == 'OPEN' and stats.manual_override %}disabled{% endif %}>
+            <i class="fa-solid fa-door-open"></i>
+            OPEN
+          </button>
+        </form>
+        <form method="POST" action="{{ url_for('door_close') }}" style="flex:1;">
+          <button type="submit" class="btn-door btn-door-close"
+                  {% if stats.door_status == 'CLOSE' and stats.manual_override %}disabled{% endif %}>
+            <i class="fa-solid fa-door-closed"></i>
+            CLOSE
+          </button>
+        </form>
+      </div>
+
+      {% if stats.manual_override %}
+      <form method="POST" action="{{ url_for('door_auto') }}" style="margin-top:8px;">
+        <button type="submit" class="btn-return-auto">
+          <i class="fa-solid fa-robot"></i>
+          Return to AI Control
+        </button>
+      </form>
+      {% endif %}
+
+      <div class="mc-note">
+        {% if stats.manual_override %}
+          <i class="fa-solid fa-triangle-exclamation" style="color:var(--amber)"></i>
+          Manual override active — AI is paused
+        {% else %}
+          <i class="fa-solid fa-robot" style="color:var(--green)"></i>
+          AI is in control — manual buttons override AI
+        {% endif %}
+      </div>
+    </div>
+
+  </section>
+
+  <!-- Stats + Activity -->
+  <section class="panel stats-detail-panel">
+    <div class="panel-header">
+      <i class="fa-solid fa-chart-bar"></i>
+      <span>Detection Statistics</span>
+    </div>
+
+    <div class="stat-detail-row">
+      <span class="sd-label">Detection Rate</span>
+      <div class="sd-bar-wrap">
+        <div class="sd-bar">
+          <div class="sd-fill" id="detectionRateBar"
+               style="width:{{ ((stats.chickens / stats.total * 100)|round(1)) if stats.total > 0 else 0 }}%">
+          </div>
+        </div>
+        <span class="sd-val" id="detectionRate">
+          {{ ((stats.chickens / stats.total * 100)|round(1)) if stats.total > 0 else 0 }}%
+        </span>
+      </div>
+    </div>
+
+    <div class="stat-detail-row">
+      <span class="sd-label">No Chicken</span>
+      <div class="sd-bar-wrap">
+        <div class="sd-bar">
+          <div class="sd-fill sd-fill--red" id="noDetectionBar"
+               style="width:{{ (((stats.total - stats.chickens) / stats.total * 100)|round(1)) if stats.total > 0 else 0 }}%">
+          </div>
+        </div>
+        <span class="sd-val" id="noDetectionRate">
+          {{ (((stats.total - stats.chickens) / stats.total * 100)|round(1)) if stats.total > 0 else 0 }}%
+        </span>
+      </div>
+    </div>
+
+    <div class="sd-counters">
+      <div class="sd-counter">
+        <span class="sd-counter-val" id="sdTotal">{{ stats.total }}</span>
+        <span class="sd-counter-label">Total</span>
+      </div>
+      <div class="sd-counter">
+        <span class="sd-counter-val" style="color:var(--green)" id="sdChickens">{{ stats.chickens }}</span>
+        <span class="sd-counter-label">Chickens</span>
+      </div>
+      <div class="sd-counter">
+        <span class="sd-counter-val" style="color:var(--red)" id="sdNone">{{ stats.total - stats.chickens }}</span>
+        <span class="sd-counter-label">None</span>
+      </div>
+    </div>
+
+    <!-- Chicken count progress -->
+    <div class="panel-header" style="margin-top:4px; border-top:1px solid var(--border); padding-top:14px;">
+      <i class="fa-solid fa-egg"></i>
+      <span>Chicken Count Progress</span>
+    </div>
+    <div class="cc-detail">
+      <div class="cc-big-number" id="ccBig">
+        <span id="ccBigNum">{{ stats.chicken_count }}</span>
+        <span class="cc-total">/ {{ stats.total_chickens }}</span>
+      </div>
+      <div class="cc-bar" style="height:10px; margin:10px 0;">
+        <div class="cc-fill" id="ccFill2"
+             style="width:{{ [(stats.chicken_count / stats.total_chickens * 100), 100]|min|round }}%">
+        </div>
+      </div>
+      <div class="cc-status-text" id="ccStatusText">
+        {% if stats.all_inside %}
+          ✅ All {{ stats.total_chickens }} chickens are inside — door will close
+        {% else %}
+          ⏳ {{ stats.total_chickens - stats.chicken_count }} chickens still outside
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Recent activity -->
+    <div class="panel-header" style="margin-top:14px; border-top:1px solid var(--border); padding-top:14px;">
+      <i class="fa-solid fa-list"></i>
+      <span>Recent Activity</span>
+      <a href="{{ url_for('history') }}" class="panel-link">View all →</a>
+    </div>
+    <div class="activity-list" id="activityList">
+      <div class="activity-empty">Loading...</div>
+    </div>
+
+  </section>
+</div>
+
+<!-- ─── QUICK LINK ─────────────────────────── -->
+<div class="quick-link-bar">
+  <a href="{{ url_for('history') }}" class="quick-link">
+    <i class="fa-solid fa-clock-rotate-left"></i>
+    View full detection history
+    <i class="fa-solid fa-arrow-right ms-2"></i>
+  </a>
+</div>
+
+<!-- ─── NOTIFICATION PANEL ───────────────────── -->
+<div class="notif-panel" id="notifPanel">
+  <div class="notif-header">
+    <span><i class="fa-solid fa-bell me-2"></i>Notifications</span>
+    <button onclick="closeNotif()" class="notif-close"><i class="fa-solid fa-xmark"></i></button>
+  </div>
+  <div class="notif-list" id="notifList">
+    <div class="notif-empty">No notifications yet</div>
+  </div>
+  <div class="notif-footer">
+    <button onclick="clearNotifs()" class="notif-clear">
+      <i class="fa-solid fa-trash"></i> Clear all
+    </button>
+  </div>
+</div>
+<div class="notif-overlay" id="notifOverlay" onclick="closeNotif()"></div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TOTAL_CHICKENS = {{ stats.total_chickens }};
+
+// ── Notifications ───────────────────────────
+let notifications = JSON.parse(localStorage.getItem('coopNotifs') || '[]');
+let unreadCount   = 0;
+
+function saveNotifs()  { localStorage.setItem('coopNotifs', JSON.stringify(notifications.slice(0,50))); }
+
+function addNotification(type, message, time) {
+  notifications.unshift({ type, message, time, id: Date.now() });
+  unreadCount++;
+  saveNotifs();
+  updateNotifBadge();
+  renderNotifList();
+}
+
+function updateNotifBadge() {
+  const badge = document.getElementById('notifBadge');
+  badge.textContent  = unreadCount > 9 ? '9+' : unreadCount;
+  badge.style.display = unreadCount > 0 ? 'flex' : 'none';
+}
+
+function renderNotifList() {
+  const list = document.getElementById('notifList');
+  if (!notifications.length) { list.innerHTML = '<div class="notif-empty">No notifications yet</div>'; return; }
+  list.innerHTML = notifications.map(n => `
+    <div class="notif-item notif-${n.type}">
+      <div class="notif-icon">
+        <i class="fa-solid ${n.type==='open'?'fa-door-open':n.type==='close'?'fa-door-closed':n.type==='all'?'fa-egg':'fa-triangle-exclamation'}"></i>
+      </div>
+      <div class="notif-content">
+        <div class="notif-msg">${n.message}</div>
+        <div class="notif-time">${n.time}</div>
+      </div>
+    </div>`).join('');
+}
+
+function openNotif()  {
+  document.getElementById('notifPanel').classList.add('open');
+  document.getElementById('notifOverlay').classList.add('active');
+  unreadCount = 0; updateNotifBadge();
+}
+function closeNotif() {
+  document.getElementById('notifPanel').classList.remove('open');
+  document.getElementById('notifOverlay').classList.remove('active');
+}
+function clearNotifs() { notifications = []; saveNotifs(); renderNotifList(); }
+
+// ── Poll ────────────────────────────────────
+let lastDoor     = '{{ stats.door_status }}';
+let lastAllInside = {{ 'true' if stats.all_inside else 'false' }};
+let lastDaytime  = {{ 'true' if stats.is_daytime else 'false' }};
+
+async function pollStatus() {
+  try {
+    const res  = await fetch('/api/status');
+    const data = await res.json();
+
+    // Latest image
+    if (data.result_img) {
+      const img = document.getElementById('autoImg');
+      img.src = data.result_img + '?t=' + Date.now();
+      img.style.display = 'block';
+      document.getElementById('noCapture').style.display = 'none';
+      document.getElementById('autoTime').textContent    = data.time;
+    }
+
+    // Confidence
+    document.getElementById('autoConfBar').style.width = data.confidence + '%';
+    document.getElementById('autoConfVal').textContent  = data.confidence + '%';
+
+    // Verdict
+    const verdict = document.getElementById('autoVerdict');
+    if (data.detected) {
+      verdict.className = 'verdict verdict--open';
+      verdict.innerHTML = '<i class="fa-solid fa-circle-check"></i><div><strong>Chicken Detected</strong><span>→ OPEN DOOR</span></div>';
+    } else {
+      verdict.className = 'verdict verdict--close';
+      verdict.innerHTML = '<i class="fa-solid fa-circle-xmark"></i><div><strong>No Chicken</strong><span>→ CLOSE DOOR</span></div>';
+    }
+
+    // Stat cards
+    document.getElementById('statTotal').textContent    = data.total;
+    document.getElementById('statChickens').textContent = data.chickens;
+
+    // Door badge
+    document.getElementById('doorBadge').textContent  = data.door_status;
+    document.getElementById('doorBadge').className    = 'door-badge door-badge--' + data.door_status.toLowerCase();
+    document.getElementById('doorIcon').className     = 'fa-solid ' + (data.door_status==='OPEN'?'fa-door-open':'fa-door-closed');
+
+    // LDR
+    document.getElementById('ldrIcon').className   = 'fa-solid ' + (data.is_daytime?'fa-sun':'fa-moon');
+    document.getElementById('ldrStatus').textContent = data.is_daytime ? 'DAY' : 'NIGHT';
+    document.getElementById('sunriseValue').textContent = data.sunrise;
+    document.getElementById('sunsetValue').textContent = data.sunset;
+
+    // Chicken counter
+    const pct = Math.min(Math.round(data.chicken_count / TOTAL_CHICKENS * 100), 100);
+    document.getElementById('ccCount').textContent  = data.chicken_count;
+    document.getElementById('ccFill').style.width   = pct + '%';
+    document.getElementById('ccPct').textContent    = pct + '%';
+    document.getElementById('ccBigNum').textContent = data.chicken_count;
+    document.getElementById('ccFill2').style.width  = pct + '%';
+
+    const statusText = document.getElementById('ccStatusText');
+    if (data.all_inside) {
+      statusText.textContent = `✅ All ${TOTAL_CHICKENS} chickens are inside — door will close`;
+    } else {
+      statusText.textContent = `⏳ ${TOTAL_CHICKENS - data.chicken_count} chickens still outside`;
+    }
+
+    // Stats bars
+    const total    = data.total || 1;
+    const chickPct = Math.round(data.chickens / total * 100);
+    document.getElementById('detectionRateBar').style.width = chickPct + '%';
+    document.getElementById('detectionRate').textContent    = chickPct + '%';
+    document.getElementById('noDetectionBar').style.width   = (100 - chickPct) + '%';
+    document.getElementById('noDetectionRate').textContent  = (100 - chickPct) + '%';
+    document.getElementById('sdTotal').textContent          = data.total;
+    document.getElementById('sdChickens').textContent       = data.chickens;
+    document.getElementById('sdNone').textContent           = data.total - data.chickens;
+
+    // Notifications on state changes
+    if (data.door_status !== lastDoor) {
+      if (data.door_status === 'OPEN') {
+        addNotification('open', `🐔 Chicken detected — Door OPENED`, data.time);
+      } else {
+        addNotification('close', `🚪 Door CLOSED`, data.time);
+      }
+      lastDoor = data.door_status;
+    }
+    if (!lastDaytime && data.is_daytime) {
+      addNotification('warn', '☀️ Day detected — AI detection active', data.time);
+    }
+    if (lastDaytime && !data.is_daytime) {
+      addNotification('warn', '🌙 Night detected — Door forced CLOSED', data.time);
+    }
+    if (!lastAllInside && data.all_inside) {
+      addNotification('all', `✅ All ${TOTAL_CHICKENS} chickens inside — Door closing`, data.time);
+    }
+    lastAllInside = data.all_inside;
+    lastDaytime   = data.is_daytime;
+
+    // Activity list
+    if (data.activity && data.activity.length) {
+      document.getElementById('activityList').innerHTML = data.activity.map(a => `
+        <div class="activity-item">
+          <div class="activity-dot activity-dot--${a.door.toLowerCase()}"></div>
+          <span class="activity-text">
+            ${a.manual ? '👤 Manual' : a.detected ? '🐔 ' + a.count + ' chicken(s)' : '❌ None'}
+            ${!a.daytime ? '🌙' : ''}
+          </span>
+          <span class="activity-time">${a.time.split(' ')[1]}</span>
+        </div>`).join('');
+    }
+
+  } catch(e) { console.log('Poll error:', e); }
+}
+
+renderNotifList();
+updateNotifBadge();
+setInterval(pollStatus, 5000);
+pollStatus();
+</script>
+{% endblock %}
