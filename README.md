@@ -4,8 +4,8 @@ An automated chicken coop door controlled by computer vision. A **YOLOv8** model
 
 ## Screenshots
 
-![Dashboard](docs/dashboard.png)
-![Chicken detection](docs/detection.png)
+![Dashboard](docs/dashboard.jpeg)
+![Chicken detection](docs/detection.jpeg)
 
 ## Features
 
